@@ -1,0 +1,25 @@
+{
+  "grid": {"start": [10, 20], "expansion": [10, 10], "max_tier": 14, "tile_unit": "2x2"},
+  "scan_speeds_sec": {"lvl_1": 10, "lvl_2": 5, "lvl_3": 1},
+  "cargo_distribution": {"road": 0.333, "rail": 0.333, "air": 0.167, "maritime": 0.083, "invalid": 0.083},
+  "nodes": {
+    "CNV": {"name": "Straight/Corner Conveyor", "cost": 100, "upg": [50, 100], "io": "1:1"},
+    "JNR": {"name": "Joiner Conveyor", "cost": 350, "upg": [50, 100], "io": "2:1"},
+    "BRG": {"name": "Bridger Conveyor", "cost": 500, "upg": [50, 100], "io": "cross"},
+    "SPL": {"name": "Smart Splitter", "cost": 800, "upg": [50, 100], "io": "1:3"},
+    "TAG": {"name": "Sticker Checker", "cost": 1200, "upg": [2000, 4000], "io": "1:3 (Valid/Invalid/None)"},
+    "WGT": {"name": "Weight Scanner", "cost": 1500, "upg": [5000, 10000], "io": "1:2 (Valid/Invalid)"},
+    "SER": {"name": "Serial Scanner", "cost": 1500, "upg": [5000, 10000], "io": "1:2 (Valid/Invalid)"},
+    "CNT": {"name": "Country Scanner", "cost": 1500, "upg": [5000, 10000], "io": "1:2 (Valid/Invalid)"},
+    "CRG": {"name": "Cargo Type Scanner", "cost": 1500, "upg": [5000, 10000], "io": "1:2 (Valid/Invalid)"},
+    "STP": {"name": "Stamp Scanner", "cost": 1500, "upg": [5000, 10000], "io": "1:2 (Valid/Invalid)"},
+    "PRH": {"name": "Prohibited Contents Scanner", "cost": 2000, "upg": [5000, 10000], "io": "1:2 (Valid/Invalid)"},
+    "CID": {"name": "Contents Inspection Diverter", "cost": 1250, "upg": [50, 100], "io": "1:2 (Inspect/Pass)"},
+    "APV": {"name": "Approve Sticker Applier", "cost": 3000, "upg": [50, 100], "io": "1:1"},
+    "DNY": {"name": "Deny Sticker Applier", "cost": 3000, "upg": [50, 100], "io": "1:1"},
+    "CTD": {"name": "Cargo Type Diverter", "cost": 1200, "upg": [50, 100], "io": "1:2"},
+    "PSR": {"name": "Pauser Conveyor", "cost": 125, "upg": [50, 100], "io": "1:1"},
+    "LDR": {"name": "Loader Conveyor", "cost": 600, "upg": [50, 100], "io": "1:rack"},
+    "UNL": {"name": "Unloader Conveyor", "cost": 600, "upg": [50, 100], "io": "rack:1"}
+  }
+}

@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { @apply min-h-full; }
+  body { @apply bg-bay-950 text-bay-100 font-mono text-[13px] antialiased; }
+  ::selection { @apply bg-hazard text-black; }
+}
+
+@layer components {
+  .panel { @apply bg-bay-900 border border-bay-700; }
+  .label { @apply block text-[10px] uppercase tracking-[0.15em] text-bay-500 mb-1.5; }
+  .btn { @apply inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 border border-bay-700 bg-bay-950 hover:border-bay-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed; }
+  .btn-on { @apply border-hazard text-hazard bg-hazard-dim; }
+  .btn-primary { @apply bg-hazard text-black border-hazard font-bold hover:brightness-110; }
+  .hazard-stripe { background: repeating-linear-gradient(-45deg, #15191b 0 12px, #111416 12px 24px); }
+  .scroll-thin { scrollbar-width: thin; scrollbar-color: #262c30 transparent; }
+}

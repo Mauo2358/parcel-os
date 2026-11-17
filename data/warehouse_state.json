@@ -1,0 +1,7 @@
+{
+  "tier": 3,
+  "input_doors": 2,
+  "unlocked_nodes": ["CNV", "JNR", "TAG", "SER", "WGT"],
+  "scanner_levels": {"TAG": 1, "SER": 1, "WGT": 1},
+  "manual_checks_remaining": ["CNT", "CRG", "STP", "PRH", "APV", "DNY"]
+}

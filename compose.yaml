@@ -1,0 +1,12 @@
+name: parcel-os
+
+services:
+  parcel-os:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: parcel-os:latest
+    container_name: parcel-os-planner
+    ports:
+      - "8088:80"
+    restart: unless-stopped
