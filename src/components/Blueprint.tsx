@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Eraser, MousePointer2, RotateCw, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { ZoomControls, useStoredZoom, useZoomPan } from "../lib/useZoomPan";
-import { bomFromGrid, key, tileCost, tileName, type Cell, type Dir, type Footprint, type Grid, type NodeId, type TileType } from "../lib/engine";
+import { ALL_SLOTS, BASE_SLOTS, bomFromGrid, key, slotOf, tileCost, tileName, type Cell, type Dir, type Footprint, type Grid, type NodeId, type TileType } from "../lib/engine";
 
 type Tool = { kind: "paint"; t: TileType } | { kind: "rotate" } | { kind: "erase" } | { kind: "inspect" };
 
@@ -39,9 +39,31 @@ interface Props {
   template: Grid;
   unlocked: NodeId[];
   flow?: ReactNode;
+  onToggleSlot?: (id: string) => void;
 }
 
-export default function Blueprint({ fp, grid, setGrid, template, unlocked, flow }: Props) {
+/** Mini expansion board, laid out like the in-game blackboard: 4 slot rows × 5 slot cols. */
+function SlotMap({ open, onToggle }: { open: string[]; onToggle?: (id: string) => void }) {
+  return (
+    <div className="flex items-center gap-2" title="Warehouse expansions (click to lock/unlock a 10×10 slot)">
+      <span className="text-[10px] tracking-widest text-bay-500">EXPANSIONS</span>
+      <div className="grid gap-px" style={{ gridTemplateColumns: "repeat(5, 12px)" }}>
+        {Array.from({ length: 20 }, (_, i) => {
+          const id = `${Math.floor(i / 5)},${i % 5}`;
+          if (!ALL_SLOTS.includes(id)) return <div key={id} className="h-3" />;
+          const base = BASE_SLOTS.includes(id);
+          const on = open.includes(id);
+          return (
+            <button key={id} disabled={base} onClick={() => onToggle?.(id)} title={base ? "Base" : on ? `Slot ${id} · unlocked` : `Slot ${id} · locked`}
+              className={`h-3 w-3 border ${base ? "border-bay-500 bg-bay-500" : on ? "border-hazard bg-hazard/70" : "border-bay-700 bg-bay-950 hover:border-hazard"}`} />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export default function Blueprint({ fp, grid, setGrid, template, unlocked, flow, onToggleSlot }: Props) {
   const [tool, setTool] = useState<Tool>({ kind: "paint", t: "CNV" });
   const [dir, setDir] = useState<Dir>(0);
   const [hover, setHover] = useState<string | null>(null);
@@ -136,6 +158,7 @@ export default function Blueprint({ fp, grid, setGrid, template, unlocked, flow 
       <div className="flex min-h-0 min-w-0 shrink-0 flex-col lg:max-w-[60%]">
         <div className="flex items-center justify-between gap-2 px-3 pt-2">
           <span className="text-[10px] tracking-widest text-bay-500">TILE GRID</span>
+          <SlotMap open={fp.slots} onToggle={onToggleSlot} />
           <ZoomControls scale={zoom} onZoom={setGz} onReset={() => setGz(1)} />
         </div>
       <div ref={scrollRef} className="scroll-thin min-h-0 flex-1 overflow-auto p-3">
@@ -151,8 +174,9 @@ export default function Blueprint({ fp, grid, setGrid, template, unlocked, flow 
             const k = key(r, c);
             if (fp.blocked(r, c)) return <div key={k} className="hazard-stripe" style={{ height: cell }} />;
             const v = inBounds[k];
-            const ghost = !v && template[k];
-            const exp = r >= 10 ? (Math.floor((r - 10) / 10) % 2 === 0) !== (c >= 10) : false;
+            const ghost = v ? undefined : template[k];
+            const [sr, sc] = slotOf(r, c).split(",").map(Number);
+            const exp = (sr + sc) % 2 === 1; // checker the 10×10 slots like the game floor
             return (
               <div
                 key={k}

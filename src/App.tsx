@@ -5,7 +5,7 @@ import ImportModal from "./components/ImportModal";
 import FlowDiagram from "./components/FlowDiagram";
 import PreStickered from "./components/PreStickered";
 import {
-  CATALOG, DEFAULT_STATE, LEVELED, MK, RULES, effectiveUnlocked, fromWarehouseState, levelOf, outputSplit, perMin, plan, scanTime,
+  CATALOG, DEFAULT_STATE, LEVELED, MK, RULES, BASE_SLOTS, effectiveUnlocked, fromWarehouseState, slotsFor, levelOf, outputSplit, perMin, plan, scanTime,
   topologyText, toWarehouseState, type Grid, type Level, type Line, type MergeMode, type NodeId, type PlannerState, type WarehouseState,
 } from "./lib/engine";
 
@@ -115,6 +115,12 @@ export default function App() {
     if (on) delete levelOverrides[n];
     return { ...x, unlocked: on ? x.unlocked.filter((y) => y !== n) : [...x.unlocked, n], levelOverrides };
   });
+  const toggleSlot = (id: string) => setS((x) => {
+    if (BASE_SLOTS.includes(id)) return x;
+    const cur = slotsFor(x);
+    const slots = cur.includes(id) ? cur.filter((y) => y !== id) : [...cur, id];
+    return { ...x, slots, tier: Math.max(1, Math.min(RULES.grid.max_tier, slots.length - BASE_SLOTS.length)) };
+  });
   const override = (n: NodeId, v: Level | 0) => setS((x) => {
     const levelOverrides = { ...x.levelOverrides };
     if (v === 0) delete levelOverrides[n]; else levelOverrides[n] = v;
@@ -123,7 +129,7 @@ export default function App() {
   const applyPatch = (w: WarehouseState) => {
     const next = fromWarehouseState(w, s);
     setS(next);
-    setGrid(plan(next).grid);
+    setGrid(w.blueprint && typeof w.blueprint === "object" ? w.blueprint : plan(next).grid);
   };
   const reset = () => { setS(DEFAULT_STATE); setGrid(plan(DEFAULT_STATE).grid); };
   const download = () => {
@@ -162,7 +168,7 @@ export default function App() {
           <h2 className="mb-4 flex items-center gap-2 border-b border-dashed border-bay-700 pb-2 text-[11px] tracking-[0.2em] text-hazard"><Layers size={13} /> CONTROLS</h2>
 
           <Field label="Warehouse tier" right={`${p.footprint.rows}×${p.footprint.cols} · ${p.footprint.tiles} tiles`}>
-            <input type="range" min={1} max={RULES.grid.max_tier} value={s.tier} onChange={(e) => set("tier")(Number(e.target.value))} className="w-full accent-hazard" />
+            <input type="range" min={1} max={RULES.grid.max_tier} value={s.tier} onChange={(e) => setS((x) => ({ ...x, tier: Number(e.target.value), slots: null }))} className="w-full accent-hazard" />
             <div className="flex justify-between text-[10px] text-bay-500"><span>1</span><b className="text-bay-100">T{s.tier}</b><span className="text-hazard">12+ pivot</span><span>14</span></div>
           </Field>
 
@@ -294,7 +300,7 @@ export default function App() {
             <pre className="scroll-thin overflow-auto border-t border-bay-700 p-3 text-[12px] text-bay-300">{topo}</pre>
           </section>
 
-          <Blueprint fp={p.footprint} grid={grid} setGrid={setGrid} template={p.grid} unlocked={effectiveUnlocked(s)} flow={<FlowDiagram plan={p} state={s} />} />
+          <Blueprint fp={p.footprint} onToggleSlot={toggleSlot} grid={grid} setGrid={setGrid} template={p.grid} unlocked={effectiveUnlocked(s)} flow={<FlowDiagram plan={p} state={s} />} />
 
           <div className="grid gap-4 xl:grid-cols-2">
             <section className="panel">

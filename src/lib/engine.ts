@@ -26,6 +26,8 @@ export interface PlannerState {
   mergeMode: MergeMode;
   dockDistance: number;
   outputs: Record<Dock, boolean>;
+  /** Unlocked 10×10 slot ids ("slotRow,slotCol"); null = default order for the tier. */
+  slots?: string[] | null;
 }
 
 export interface Line {
@@ -82,6 +84,7 @@ export const DEFAULT_STATE: PlannerState = {
   mergeMode: "auto",
   dockDistance: 0,
   outputs: { air: false, sea: false },
+  slots: null,
 };
 export const DOCKS: Dock[] = ["air", "sea"];
 export const DOCK_TILE: Record<Dock, TileType> = { air: "AIR", sea: "SEA" };
@@ -112,18 +115,47 @@ export function levelOf(s: PlannerState, n: NodeId): Level {
 /* ───────────────────────── footprint ───────────────────────── */
 export interface Footprint { rows: number; cols: number; tiles: number; blocked: (r: number, c: number) => boolean }
 
-/** 10x20 base + (tier-1) 10x10 expansions stacked two-wide beneath the base. */
-export function footprint(tier: number): Footprint {
-  const [bh, bw] = RULES.grid.start;
-  const [eh, ew] = RULES.grid.expansion;
-  const exp = tier - 1;
-  const rows = bh + eh * Math.ceil(exp / 2);
-  const cols = bw;
-  const halfLast = exp % 2 === 1;
-  return {
-    rows, cols, tiles: bh * bw + exp * eh * ew,
-    blocked: (r, c) => halfLast && r >= rows - eh && c >= ew,
-  };
+/*
+ * Game warehouse geometry (from the save's GridCellIdentifier numbering):
+ * a 4×5 grid of 10×10 slots. Front block = slot cols 0-1 × rows 0-1 (20×20 units, holds the 10×20 base);
+ * back block = slot cols 2-4 × rows 0-3 (30 wide × 40 deep). 2 base + 14 expansion slots = 1,600 units at T14.
+ * Tier = number of expansions bought.
+ */
+export const SLOT = 10;
+export const BASE_SLOTS = ["0,0", "1,0"];
+export const EXPANSION_ORDER = ["0,1", "1,1", "0,2", "1,2", "2,2", "3,2", "0,3", "1,3", "2,3", "3,3", "0,4", "1,4", "2,4", "3,4"];
+export const ALL_SLOTS = [...BASE_SLOTS, ...EXPANSION_ORDER];
+export const slotOf = (r: number, c: number) => `${Math.floor(r / SLOT)},${Math.floor(c / SLOT)}`;
+export function slotsFor(s: Pick<PlannerState, "tier" | "slots">): string[] {
+  return s.slots?.length ? s.slots : [...BASE_SLOTS, ...EXPANSION_ORDER.slice(0, Math.max(0, s.tier))];
+}
+
+export interface Footprint { rows: number; cols: number; tiles: number; slots: string[]; blocked: (r: number, c: number) => boolean }
+
+/** Bounding box of the unlocked slots; locked slots inside it are blocked. */
+export function footprint(s: Pick<PlannerState, "tier" | "slots">): Footprint {
+  const slots = slotsFor(s);
+  const open = new Set(slots);
+  let rows = 0, cols = 0;
+  for (const id of open) {
+    const [sr, sc] = id.split(",").map(Number);
+    rows = Math.max(rows, (sr + 1) * SLOT); cols = Math.max(cols, (sc + 1) * SLOT);
+  }
+  return { rows, cols, tiles: open.size * SLOT * SLOT, slots, blocked: (r, c) => !open.has(slotOf(r, c)) };
+}
+
+/** Widest top-left-anchored open rectangle tall enough for `need` rows (else the largest one); templates are laid out inside it. */
+function templateRegion(fp: Footprint, need: number): { rows: number; cols: number } {
+  const cands: { rows: number; cols: number }[] = [];
+  for (let w = SLOT; w <= fp.cols; w += SLOT) {
+    let h = 0;
+    while (h < fp.rows && Array.from({ length: w / SLOT }, (_, i) => !fp.blocked(h, i * SLOT)).every(Boolean)) h += SLOT;
+    if (!h) break;
+    cands.push({ rows: h, cols: w });
+  }
+  const tall = cands.filter((c) => c.rows >= need);
+  if (tall.length) return tall[tall.length - 1];
+  return cands.sort((a, b) => b.rows * b.cols - a.rows * a.cols)[0] ?? { rows: 0, cols: 0 };
 }
 
 /* ───────────────────────── lines ───────────────────────── */
@@ -169,7 +201,10 @@ const lastRowUsed = (l: Line) =>
   rowsFor(l) - (l.mode !== "parallel_array" && l.sorts.length && l.doors.length === 1 ? 0 : 1);
 
 export function layout(lines: Line[], s: PlannerState): { grid: Grid; fits: boolean; rowsNeeded: number } {
-  const fp = footprint(s.tier);
+  const full = footprint(s);
+  const rowsNeeded = lines.reduce((a, l, i) => a + (i === lines.length - 1 ? lastRowUsed(l) : rowsFor(l)), 0);
+  const region = templateRegion(full, rowsNeeded);
+  const fp = { ...region, blocked: full.blocked };
   const grid: Grid = {};
   const put = (r: number, c: number, t: TileType, d: Dir = 0) => {
     if (r < 0 || c < 0 || r >= fp.rows || c >= fp.cols || fp.blocked(r, c)) return false;
@@ -179,7 +214,6 @@ export function layout(lines: Line[], s: PlannerState): { grid: Grid; fits: bool
   const u = effectiveUnlocked(s);
   const hasDny = u.includes("DNY");
   const ldr = s.dockDistance > 5 && u.includes("LDR");
-  const rowsNeeded = lines.reduce((a, l, i) => a + (i === lines.length - 1 ? lastRowUsed(l) : rowsFor(l)), 0);
   let r0 = 0;
   let fits = true;
 
@@ -336,7 +370,7 @@ export function plan(s: PlannerState): Plan {
     else if (s.mergeMode === "auto" && (dedicated.cost > s.budget || !dedicated.fits)) {
       pick = evaluate(s, true); merged = true;
       reason = !dedicated.fits
-        ? `Merged: dedicated lines need ${dedicated.rowsNeeded} rows, footprint has ${footprint(s.tier).rows}`
+        ? `Merged: dedicated lines need ${dedicated.rowsNeeded} rows, footprint has ${footprint(s).rows}`
         : `Merged: dedicated lines $${dedicated.cost.toLocaleString()} > budget $${s.budget.toLocaleString()}`;
     } else if (s.mergeMode === "auto") reason = "Dedicated lines: budget and footprint allow one bus per door";
   }
@@ -353,7 +387,7 @@ export function plan(s: PlannerState): Plan {
   if (pick.lines.some((l) => l.manualSort)) flags.push("CTD locked: air/sea pulled by hand");
   if (u.includes("CTD") && !s.outputs.air && !s.outputs.sea) flags.push("CTD unlocked: enable Air/Sea docks to auto-sort");
   return {
-    lines: pick.lines, merged, pivot, grid: pick.grid, footprint: footprint(s.tier), fits: pick.fits,
+    lines: pick.lines, merged, pivot, grid: pick.grid, footprint: footprint(s), fits: pick.fits,
     rowsNeeded: pick.rowsNeeded, bom: pick.bom, cost: pick.cost, overBudget: pick.cost > s.budget,
     throughput: tp, flags, reason,
   };
@@ -395,6 +429,10 @@ export interface WarehouseState {
   manual_checks_remaining: string[];
   output_docks?: string[];
   lines?: { id?: string; door: string; mode: string; chain: string[] }[];
+  /** Unlocked 10×10 slots ("slotRow,slotCol"). */
+  slots?: string[];
+  /** Exact tile layout (e.g. decoded from a game save); replaces the template on import. */
+  blueprint?: Grid;
   [k: string]: unknown;
 }
 
@@ -411,6 +449,7 @@ export function toWarehouseState(s: PlannerState, p: Plan): WarehouseState {
     manual_checks_remaining: MANUAL_SCOPE.filter((n) => !u.includes(n)),
     output_docks: ["standard", ...DOCKS.filter((d) => s.outputs[d])],
     lines: p.lines.map((l) => ({ door: l.doors.join("+"), mode: l.mode, chain: [...l.chain, ...l.sorts.map(() => "CTD" as NodeId)] })),
+    slots: slotsFor(s),
   };
 }
 
@@ -446,5 +485,6 @@ export function fromWarehouseState(w: WarehouseState, base: PlannerState): Plann
       ? { air: w.output_docks.includes("air"), sea: w.output_docks.includes("sea") || w.output_docks.includes("maritime") }
       : base.outputs,
     mergeMode: (w.lines ?? []).some((l) => String(l.door).includes("+")) ? "on" : base.mergeMode,
+    slots: Array.isArray(w.slots) ? w.slots.filter((x) => ALL_SLOTS.includes(x)) : null,
   };
 }

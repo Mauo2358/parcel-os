@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { FileUp, X } from "lucide-react";
 import { parseStatePatch, type WarehouseState } from "../lib/engine";
+import { saveToWarehouseState } from "../lib/savParser";
 
 interface Props { open: boolean; onClose: () => void; onApply: (w: WarehouseState) => void }
 
@@ -25,8 +26,16 @@ export default function ImportModal({ open, onClose, onApply }: Props) {
   const apply = () => { if (preview) { onApply(preview); setText(""); onClose(); } };
   const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) setText(await f.text());
     e.target.value = "";
+    if (!f) return;
+    if (f.name.toLowerCase().endsWith(".sav")) {
+      try {
+        const { state } = saveToWarehouseState(await f.arrayBuffer());
+        setText(JSON.stringify({ ...state, source: f.name }, null, 2));
+      } catch (err) { setErr(`Save import failed: ${(err as Error).message}`); }
+      return;
+    }
+    setText(await f.text());
   };
 
   return (
@@ -37,7 +46,7 @@ export default function ImportModal({ open, onClose, onApply }: Props) {
           <button className="text-bay-500 hover:text-bay-100" onClick={onClose}><X size={16} /></button>
         </header>
         <div className="space-y-3 p-4">
-          <p className="text-[11px] text-bay-500">Paste a warehouse_state.json object (raw or inside a ```json fence), or load the file.</p>
+          <p className="text-[11px] text-bay-500">Paste a warehouse_state.json object (raw or inside a ```json fence), or load the file. A Parcel Simulator <code>SaveN.sav</code> (%LOCALAPPDATA%\parcel\Saved\SaveGames) is decoded in-browser.</p>
           <textarea ref={ref} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false}
             className="scroll-thin h-64 w-full resize-y border border-bay-700 bg-bay-950 p-2 outline-none focus:border-hazard"
             placeholder={'{"tier":3,"input_doors":2,...}'} />
@@ -50,7 +59,7 @@ export default function ImportModal({ open, onClose, onApply }: Props) {
           )}
           <div className="flex justify-between gap-2">
             <label className="btn cursor-pointer"><FileUp size={14} /> Load file
-              <input type="file" accept=".json,.txt,.md,application/json" hidden onChange={onFile} />
+              <input type="file" accept=".json,.txt,.md,.sav,application/json" hidden onChange={onFile} />
             </label>
             <div className="flex gap-2">
               <button className="btn" onClick={onClose}>Cancel</button>
