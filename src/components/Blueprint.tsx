@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Eraser, MousePointer2, RotateCw, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { ZoomControls, useStoredZoom, useZoomPan } from "../lib/useZoomPan";
-import { ALL_SLOTS, BASE_SLOTS, bomFromGrid, key, slotOf, tileCost, tileName, type Cell, type Dir, type Footprint, type Grid, type NodeId, type TileType } from "../lib/engine";
+import { ALL_SLOTS, BASE_SLOTS, bomFromGrid, key, slotOf, tileCost, tileName, type Cell, type Dir, type Footprint, type Grid, type NodeId, type Site, type TileType } from "../lib/engine";
 
 type Tool = { kind: "paint"; t: TileType } | { kind: "rotate" } | { kind: "erase" } | { kind: "inspect" };
 
@@ -12,11 +12,21 @@ const PALETTE: { group: string; items: TileType[] }[] = [
   { group: "Transport", items: ["LDR", "RACK", "UNL"] },
   { group: "Markers", items: ["DOOR", "OUT", "AIR", "SEA"] },
 ];
+const REGIONAL_PALETTE: { group: string; items: TileType[] }[] = [
+  { group: "Belts", items: ["CNV", "JNR", "BRG", "SPL", "PSR", "APS", "SPD", "ELV"] },
+  { group: "Scanners", items: ["TAG", "SER", "WGT", "CNT", "CRG", "STP", "PRH", "CID"] },
+  { group: "Stickers", items: ["APV", "DNY", "CYD"] },
+  { group: "Transport", items: ["LDR", "RACK", "UNL"] },
+  { group: "Markers", items: ["DOOR", "OUT"] },
+];
 
 export function tileClass(t: TileType): string {
   switch (t) {
     case "CNV": case "PSR": return "bg-bay-700 text-bay-300";
-    case "JNR": case "BRG": case "SPL": case "CTD": return "bg-violet-900/70 text-violet-200";
+    case "JNR": case "BRG": case "SPL": case "CTD": case "CYD": return "bg-violet-900/70 text-violet-200";
+    case "APS": return "bg-bay-700 text-hazard";
+    case "SPD": return "bg-sky-900/80 text-sky-200";
+    case "ELV": return "bg-amber-900/80 text-amber-200";
     case "TAG": return "bg-hazard text-black";
     case "CID": return "bg-orange-900/80 text-orange-200";
     case "APV": return "bg-valid/80 text-black";
@@ -40,6 +50,8 @@ interface Props {
   unlocked: NodeId[];
   flow?: ReactNode;
   onToggleSlot?: (id: string) => void;
+  site?: Site;
+  floors?: { count: number; active: number; onChange: (i: number) => void };
 }
 
 /** Mini expansion board, laid out like the in-game blackboard: 4 slot rows × 5 slot cols. */
@@ -63,7 +75,10 @@ function SlotMap({ open, onToggle }: { open: string[]; onToggle?: (id: string) =
   );
 }
 
-export default function Blueprint({ fp, grid, setGrid, template, unlocked, flow, onToggleSlot }: Props) {
+export default function Blueprint({ fp, grid, setGrid, template, unlocked, flow, onToggleSlot, site = "origin", floors }: Props) {
+  const palette = site === "regional" ? REGIONAL_PALETTE : PALETTE;
+  const upper = !!floors && floors.active > 0;
+  const tmpl = useMemo<Grid>(() => (upper ? {} : template), [upper, template]); // templates are planned on floor 1
   const [tool, setTool] = useState<Tool>({ kind: "paint", t: "CNV" });
   const [dir, setDir] = useState<Dir>(0);
   const [hover, setHover] = useState<string | null>(null);
@@ -110,10 +125,10 @@ export default function Blueprint({ fp, grid, setGrid, template, unlocked, flow,
   const bom = useMemo(() => bomFromGrid(inBounds), [inBounds]);
   const cost = bom.reduce((a, b) => a + b.total, 0);
   const matches = useMemo(() => {
-    const a = Object.entries(template);
+    const a = Object.entries(tmpl);
     if (!a.length) return 0;
     return a.filter(([k, v]) => inBounds[k]?.t === v.t).length / a.length;
-  }, [template, inBounds]);
+  }, [tmpl, inBounds]);
 
   const hoverCell: Cell | undefined = hover ? inBounds[hover] : undefined;
   const isLocked = (t: TileType) => ["TAG", "SER", "WGT", "CNT", "CRG", "STP", "PRH", "CID", "APV", "DNY", "CTD", "LDR", "UNL"].includes(t) && !unlocked.includes(t as NodeId);
@@ -123,10 +138,10 @@ export default function Blueprint({ fp, grid, setGrid, template, unlocked, flow,
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-bay-700 px-3 py-2">
         <span className="tracking-widest text-hazard">[BLUEPRINT] <span className="text-bay-500">{fp.rows}×{fp.cols} · {fp.tiles} tiles</span></span>
         <div className="flex flex-wrap items-center gap-1.5">
-          <button className="btn btn-primary" onClick={() => setGrid({ ...template })} title="Replace grid with recommended baseline">
+          <button className="btn btn-primary" onClick={() => setGrid({ ...tmpl })} title="Replace grid with recommended baseline">
             <Wand2 size={14} /> Auto-populate
           </button>
-          <button className="btn" onClick={() => setGrid((g) => ({ ...template, ...g }))} title="Fill empty tiles from template, keep your edits">
+          <button className="btn" onClick={() => setGrid((g) => ({ ...tmpl, ...g }))} title="Fill empty tiles from template, keep your edits">
             <Sparkles size={14} /> Merge template
           </button>
           <button className="btn" onClick={() => setGrid({})}><Trash2 size={14} /> Clear</button>
@@ -142,7 +157,7 @@ export default function Blueprint({ fp, grid, setGrid, template, unlocked, flow,
             <ArrowRight size={14} style={{ transform: `rotate(${dir * 90}deg)` }} /> R
           </button>
         </div>
-        {PALETTE.map((g) => (
+        {palette.map((g) => (
           <div key={g.group} className="flex items-center gap-1">
             <span className="mr-1 text-[10px] uppercase tracking-widest text-bay-500">{g.group}</span>
             {g.items.map((t) => (
@@ -158,7 +173,15 @@ export default function Blueprint({ fp, grid, setGrid, template, unlocked, flow,
       <div className="flex min-h-0 min-w-0 shrink-0 flex-col lg:max-w-[60%]">
         <div className="flex items-center justify-between gap-2 px-3 pt-2">
           <span className="text-[10px] tracking-widest text-bay-500">TILE GRID</span>
-          <SlotMap open={fp.slots} onToggle={onToggleSlot} />
+          {site === "origin" && <SlotMap open={fp.slots} onToggle={onToggleSlot} />}
+          {floors && (
+            <div className="flex gap-1" role="tablist" aria-label="Floor">
+              {Array.from({ length: floors.count }, (_, i) => (
+                <button key={i} role="tab" aria-selected={floors.active === i} onClick={() => floors.onChange(i)}
+                  className={`btn px-2 py-0.5 text-[10px] ${floors.active === i ? "btn-on" : ""}`}>FLOOR {i + 1}</button>
+              ))}
+            </div>
+          )}
           <ZoomControls scale={zoom} onZoom={setGz} onReset={() => setGz(1)} />
         </div>
       <div ref={scrollRef} className="scroll-thin min-h-0 flex-1 overflow-auto p-3">
@@ -174,7 +197,7 @@ export default function Blueprint({ fp, grid, setGrid, template, unlocked, flow,
             const k = key(r, c);
             if (fp.blocked(r, c)) return <div key={k} className="hazard-stripe" style={{ height: cell }} />;
             const v = inBounds[k];
-            const ghost = v ? undefined : template[k];
+            const ghost = v ? undefined : tmpl[k];
             const [sr, sc] = slotOf(r, c).split(",").map(Number);
             const exp = (sr + sc) % 2 === 1; // checker the 10×10 slots like the game floor
             return (

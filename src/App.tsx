@@ -5,12 +5,22 @@ import ImportModal from "./components/ImportModal";
 import FlowDiagram from "./components/FlowDiagram";
 import PreStickered from "./components/PreStickered";
 import {
-  CATALOG, DEFAULT_STATE, LEVELED, MK, RULES, BASE_SLOTS, effectiveUnlocked, fromWarehouseState, slotsFor, levelOf, outputSplit, perMin, plan, scanTime,
-  topologyText, toWarehouseState, type Grid, type Level, type Line, type MergeMode, type NodeId, type PlannerState, type WarehouseState,
+  DEFAULT_STATE, LEVELED, MK, RULES, BASE_SLOTS, REGIONAL_DEFAULT_STATE, REGIONAL_FLOORS, TIER_RANGE, catalogFor, effectiveUnlocked, fromWarehouseState,
+  isEstimate, maxDoors, slotsFor, levelOf, outputSplit, perMin, plan, scanTime,
+  topologyText, toWarehouseState, type Floors, type Grid, type Level, type Line, type MergeMode, type NodeId, type PlannerState, type Site, type WarehouseState,
 } from "./lib/engine";
 
-const LS_STATE = "parcelos.state.v3";
-const LS_GRID = "parcelos.grid.v3";
+/** Per-site storage. The starting warehouse keeps the original keys so existing plans survive. */
+const KEYS: Record<Site, { state: string; grid: string }> = {
+  origin: { state: "parcelos.state.v3", grid: "parcelos.grid.v3" },
+  regional: { state: "parcelos.state.regional.v1", grid: "parcelos.grid.regional.v1" },
+};
+const LS_SITE = "parcelos.site";
+const SITES: { v: Site; l: string }[] = [
+  { v: "origin", l: "Starting Warehouse · T1–14" },
+  { v: "regional", l: "Regional Sorting Centre · T15–18" },
+];
+const defaultsFor = (site: Site) => (site === "regional" ? REGIONAL_DEFAULT_STATE : DEFAULT_STATE);
 const load = <T,>(k: string, d: T): T => { try { const v = localStorage.getItem(k); return v ? (JSON.parse(v) as T) : d; } catch { return d; } };
 const save = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } };
 const money = (n: number) => "$" + Math.round(n).toLocaleString();
@@ -93,13 +103,38 @@ function LineStages({ line, s }: { line: Line; s: PlannerState }) {
 }
 
 export default function App() {
-  const [s, setS] = useState<PlannerState>(() => { const saved = load<Partial<PlannerState>>(LS_STATE, {}); return { ...DEFAULT_STATE, ...saved, outputs: { ...DEFAULT_STATE.outputs, ...saved.outputs } }; });
+  const [site, setSite] = useState<Site>(() => (load<Site>(LS_SITE, "origin") === "regional" ? "regional" : "origin"));
+  useEffect(() => save(LS_SITE, site), [site]);
+  return <Planner key={site} site={site} onSite={setSite} />;
+}
+
+function Planner({ site, onSite }: { site: Site; onSite: (s: Site) => void }) {
+  const K = KEYS[site];
+  const D = defaultsFor(site);
+  const [s, setS] = useState<PlannerState>(() => { const saved = load<Partial<PlannerState>>(K.state, {}); return { ...D, ...saved, site, outputs: { ...D.outputs, ...saved.outputs } }; });
   const p = useMemo(() => plan(s), [s]);
-  const [grid, setGrid] = useState<Grid>(() => load<Grid | null>(LS_GRID, null) ?? plan({ ...DEFAULT_STATE, ...load<Partial<PlannerState>>(LS_STATE, {}) }).grid);
+  // One grid per floor (the starting warehouse has one floor; stored as a plain Grid for backward compatibility).
+  const [grids, setGrids] = useState<Grid[]>(() => {
+    const raw = load<Grid | Grid[] | null>(K.grid, null);
+    if (Array.isArray(raw)) return raw;
+    if (raw) return [raw];
+    return [plan({ ...D, ...load<Partial<PlannerState>>(K.state, {}), site }).grid];
+  });
+  const [floor, setFloor] = useState(0);
+  const levels = site === "regional" ? (s.floors ?? REGIONAL_FLOORS).levels : 1;
+  const grid = grids[Math.min(floor, levels - 1)] ?? {};
+  const setGrid = (g: Grid | ((g: Grid) => Grid)) => setGrids((all) => {
+    const next = [...all];
+    const i = Math.min(floor, levels - 1);
+    next[i] = typeof g === "function" ? g(next[i] ?? {}) : g;
+    return next;
+  });
   const [importOpen, setImportOpen] = useState(false);
 
-  useEffect(() => save(LS_STATE, s), [s]);
-  useEffect(() => save(LS_GRID, grid), [grid]);
+  useEffect(() => save(K.state, s), [s, K.state]);
+  useEffect(() => save(K.grid, site === "origin" ? grids[0] ?? {} : grids), [grids, site, K.grid]);
+  // Drop doors that the tier no longer exposes (e.g. D5 below T14).
+  useEffect(() => { if (s.inputDoors > maxDoors(s)) setS((x) => ({ ...x, inputDoors: maxDoors(x) })); }, [s]);
 
   const set = <K extends keyof PlannerState>(k: K) => (v: PlannerState[K]) => setS((x) => ({ ...x, [k]: v }));
   const ws = useMemo(() => toWarehouseState(s, p), [s, p]);
@@ -107,6 +142,9 @@ export default function App() {
   const topo = topologyText(p, s);
   const split = useMemo(() => outputSplit(s, p), [s, p]);
   const ctd = effectiveUnlocked(s).includes("CTD");
+  const catalog = catalogFor(s);
+  const [tMin, tMax] = TIER_RANGE[site];
+  const setFloors = (k: keyof Floors) => (v: number) => setS((x) => ({ ...x, floors: { ...(x.floors ?? REGIONAL_FLOORS), [k]: v } }));
   const rate = (n: number) => `${n.toFixed(1)}/min`;
 
   const toggle = (n: NodeId) => setS((x) => {
@@ -119,7 +157,7 @@ export default function App() {
     if (BASE_SLOTS.includes(id)) return x;
     const cur = slotsFor(x);
     const slots = cur.includes(id) ? cur.filter((y) => y !== id) : [...cur, id];
-    return { ...x, slots, tier: Math.max(1, Math.min(RULES.grid.max_tier, slots.length - BASE_SLOTS.length)) };
+    return { ...x, slots, tier: Math.max(tMin, Math.min(tMax, slots.length - BASE_SLOTS.length)) };
   });
   const override = (n: NodeId, v: Level | 0) => setS((x) => {
     const levelOverrides = { ...x.levelOverrides };
@@ -128,10 +166,19 @@ export default function App() {
   });
   const applyPatch = (w: WarehouseState) => {
     const next = fromWarehouseState(w, s);
+    if ((next.site ?? "origin") !== site) {
+      // Patch targets the other site: store it there and switch.
+      save(KEYS[next.site ?? "origin"].state, next);
+      const g = w.blueprint && typeof w.blueprint === "object" ? w.blueprint : plan(next).grid;
+      save(KEYS[next.site ?? "origin"].grid, next.site === "regional" ? [g] : g);
+      onSite(next.site ?? "origin");
+      return;
+    }
     setS(next);
-    setGrid(w.blueprint && typeof w.blueprint === "object" ? w.blueprint : plan(next).grid);
+    setGrids([w.blueprint && typeof w.blueprint === "object" ? w.blueprint : plan(next).grid]);
+    setFloor(0);
   };
-  const reset = () => { setS(DEFAULT_STATE); setGrid(plan(DEFAULT_STATE).grid); };
+  const reset = () => { setS(D); setGrids([plan(D).grid]); setFloor(0); };
   const download = () => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([JSON.stringify(ws, null, 2) + "\n"], { type: "application/json" }));
@@ -147,9 +194,13 @@ export default function App() {
             <div className="text-lg font-bold tracking-[0.2em] text-hazard">PARCEL-OS</div>
             <div className="text-[11px] text-bay-500">// Assembly Line Planner</div>
           </div>
+          <select value={site} onChange={(e) => onSite(e.target.value as Site)} aria-label="Warehouse"
+            className="ml-2 border border-hazard/60 bg-bay-950 px-2 py-1.5 text-[11px] font-bold tracking-widest text-hazard outline-none focus:border-hazard">
+            {SITES.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+          </select>
         </div>
         <div className="flex flex-wrap items-center gap-4 text-[11px] text-bay-500">
-          <span>TIER <b className="text-bay-100">{s.tier}</b>/{RULES.grid.max_tier}</span>
+          <span>TIER <b className="text-bay-100">{s.tier}</b>/{tMax}</span>
           <span>DOORS <b className="text-bay-100">{s.inputDoors}</b></span>
           <span>LINES <b className="text-bay-100">{p.lines.length}</b></span>
           <span>MODE <b className={p.pivot ? "text-hazard" : p.merged ? "text-violet-300" : "text-valid"}>{p.pivot ? "META PIVOT" : p.merged ? "MERGED BUS" : "DEDICATED"}</b></span>
@@ -167,13 +218,28 @@ export default function App() {
         <aside className="panel scroll-thin p-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-auto">
           <h2 className="mb-4 flex items-center gap-2 border-b border-dashed border-bay-700 pb-2 text-[11px] tracking-[0.2em] text-hazard"><Layers size={13} /> CONTROLS</h2>
 
-          <Field label="Warehouse tier" right={`${p.footprint.rows}×${p.footprint.cols} · ${p.footprint.tiles} tiles`}>
-            <input type="range" min={1} max={RULES.grid.max_tier} value={s.tier} onChange={(e) => setS((x) => ({ ...x, tier: Number(e.target.value), slots: null }))} className="w-full accent-hazard" />
-            <div className="flex justify-between text-[10px] text-bay-500"><span>1</span><b className="text-bay-100">T{s.tier}</b><span className="text-hazard">12+ pivot</span><span>14</span></div>
+          <Field label="Warehouse tier" right={`${p.footprint.rows}×${p.footprint.cols} · ${p.footprint.tiles * levels} tiles${levels > 1 ? ` · ${levels} floors` : ""}`}>
+            <input type="range" min={tMin} max={tMax} value={s.tier} onChange={(e) => setS((x) => ({ ...x, tier: Number(e.target.value), slots: null }))} className="w-full accent-hazard" />
+            <div className="flex justify-between text-[10px] text-bay-500"><span>{tMin}</span><b className="text-bay-100">T{s.tier}</b>{site === "origin" ? <span className="text-hazard">12+ pivot · D5 @14</span> : <span className="text-hazard">country sorting</span>}<span>{tMax}</span></div>
           </Field>
 
-          <Field label="Active input doors">
-            <Seg value={s.inputDoors} onChange={set("inputDoors")} options={[1, 2, 3, 4].map((v) => ({ v, l: `D${v}` }))} />
+          {site === "regional" && (
+            <Field label="Regional floor (per level)" right={<span className="text-hazard" title="Not published anywhere yet: measure in-game (1 unit = 1 belt) and enter here">estimate</span>}>
+              <div className="grid grid-cols-3 gap-2">
+                {([["cols", "Width"], ["rows", "Depth"], ["levels", "Floors"]] as const).map(([k, l]) => (
+                  <label key={k}><span className="label">{l}</span>
+                    <input type="number" min={k === "levels" ? 1 : 10} max={k === "levels" ? 4 : 200} step={k === "levels" ? 1 : 10} value={(s.floors ?? REGIONAL_FLOORS)[k]}
+                      onChange={(e) => setFloors(k)(Math.max(k === "levels" ? 1 : 10, Math.min(k === "levels" ? 4 : 200, Number(e.target.value) || 0)))}
+                      className="w-full border border-bay-700 bg-bay-950 px-2 py-1.5 outline-none focus:border-hazard" />
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1 text-[10px] text-bay-500">Default ≈ 5× the starting warehouse over 2 floors. 12 country exports.</p>
+            </Field>
+          )}
+
+          <Field label="Active input doors" right={site === "origin" ? (s.tier >= RULES.grid.max_tier ? "5 at T14" : "D5 unlocks at T14") : <span className="text-hazard">count est.</span>}>
+            <Seg value={s.inputDoors} onChange={set("inputDoors")} options={Array.from({ length: maxDoors(s) }, (_, i) => ({ v: i + 1, l: `D${i + 1}` }))} />
           </Field>
 
           <Field label="Scanner upgrade level" right={`${perMin(s.scannerLevel)} box/min/chain`}>
@@ -200,7 +266,7 @@ export default function App() {
 
           {!p.pivot && <PreStickered value={s.preStickered} onChange={set("preStickered")} />}
 
-          <Field label="Output docks" right={ctd ? "sorted by CTD" : (s.outputs.air || s.outputs.sea) ? <span className="text-hazard">CTD locked · manual</span> : undefined}>
+          {site === "origin" && <Field label="Output docks" right={ctd ? "sorted by CTD" : (s.outputs.air || s.outputs.sea) ? <span className="text-hazard">CTD locked · manual</span> : undefined}>
             <div className="grid grid-cols-3 gap-1">
               <div className="flex flex-col items-center gap-0.5 border border-valid/60 bg-valid/10 px-1 py-1.5 text-valid" title="Approved road + rail parcels. Always on.">
                 <span className="flex items-center gap-1 text-[11px] font-bold"><Truck size={13} /> STD</span>
@@ -216,11 +282,17 @@ export default function App() {
               ))}
             </div>
             <p className="mt-1 text-[10px] text-bay-500">Rejects {rate(split.reject)} → {effectiveUnlocked(s).includes("DNY") ? "DNY" : "manual deny"}</p>
-          </Field>
+          </Field>}
+          {site === "regional" && (
+            <Field label="Country exports" right={effectiveUnlocked(s).includes("CYD") ? "sorted by CYD" : <span className="text-hazard">CYD locked · manual</span>}>
+              <p className="text-[11px] text-bay-300">Approved {rate(split.standard)} → Country Diverter → {RULES.regional.countries} programmable export doors (schedule changes weekly).</p>
+              <p className="mt-1 text-[10px] text-bay-500">Rejects {rate(split.reject)} → {effectiveUnlocked(s).includes("DNY") ? "DNY" : "manual deny"}</p>
+            </Field>
+          )}
 
-          <Field label="Hardware catalog" right={`${s.unlocked.length}/${CATALOG.length}`}>
+          <Field label="Hardware catalog" right={`${s.unlocked.filter((n) => catalog.includes(n)).length}/${catalog.length}`}>
             <div className="space-y-1">
-              {CATALOG.map((n) => {
+              {catalog.map((n) => {
                 const on = s.unlocked.includes(n);
                 const lv = LEVELED.includes(n);
                 return (
@@ -237,7 +309,7 @@ export default function App() {
                         {([1, 2, 3] as Level[]).map((v) => <option key={v} value={v}>{MK[v]}</option>)}
                       </select>
                     ) : (
-                      <span className="text-[10px] text-bay-500">${RULES.nodes[n].cost}</span>
+                      <span className="text-[10px] text-bay-500" title={isEstimate(n) ? "Price not published yet" : undefined}>{isEstimate(n) ? "$?" : `$${RULES.nodes[n].cost}`}</span>
                     )}
                   </div>
                 );
@@ -300,7 +372,7 @@ export default function App() {
             <pre className="scroll-thin overflow-auto border-t border-bay-700 p-3 text-[12px] text-bay-300">{topo}</pre>
           </section>
 
-          <Blueprint fp={p.footprint} onToggleSlot={toggleSlot} grid={grid} setGrid={setGrid} template={p.grid} unlocked={effectiveUnlocked(s)} flow={<FlowDiagram plan={p} state={s} />} />
+          <Blueprint fp={p.footprint} site={site} onToggleSlot={toggleSlot} floors={levels > 1 ? { count: levels, active: Math.min(floor, levels - 1), onChange: setFloor } : undefined} grid={grid} setGrid={setGrid} template={p.grid} unlocked={effectiveUnlocked(s)} flow={<FlowDiagram plan={p} state={s} />} />
 
           <div className="grid gap-4 xl:grid-cols-2">
             <section className="panel">
@@ -311,7 +383,7 @@ export default function App() {
                   {p.bom.map((b) => (
                     <tr key={b.id} className="border-t border-bay-800">
                       <td className="px-3 py-1"><span className={`px-1 text-[11px] font-bold ${tileClass(b.id)}`}>{b.id}</span></td>
-                      <td className="text-bay-300">{b.name}</td><td className="text-right">{b.qty}</td><td className="text-right text-bay-500">{money(b.unit)}</td><td className="px-3 text-right">{money(b.total)}</td>
+                      <td className="text-bay-300">{b.name}</td><td className="text-right">{b.qty}</td><td className="text-right text-bay-500">{isEstimate(b.id) ? "$?" : money(b.unit)}</td><td className="px-3 text-right">{money(b.total)}</td>
                     </tr>
                   ))}
                 </tbody>

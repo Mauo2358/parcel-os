@@ -1,5 +1,6 @@
 {
   "grid": {"start": [10, 20], "expansion": [10, 10], "max_tier": 14, "tile_unit": "2x2"},
+  "regional": {"tiers": [15, 18], "floor_est": [50, 80], "levels": 2, "countries": 12, "unlock_cost": 500000, "max_doors_est": 8},
   "scan_speeds_sec": {"lvl_1": 10, "lvl_2": 5, "lvl_3": 1},
   "cargo_distribution": {"road": 0.333, "rail": 0.333, "air": 0.167, "maritime": 0.083, "invalid": 0.083},
   "nodes": {
@@ -20,6 +21,10 @@
     "CTD": {"name": "Cargo Type Diverter", "cost": 1200, "upg": [50, 100], "io": "1:2"},
     "PSR": {"name": "Pauser Conveyor", "cost": 125, "upg": [50, 100], "io": "1:1"},
     "LDR": {"name": "Loader Conveyor", "cost": 600, "upg": [50, 100], "io": "1:rack"},
-    "UNL": {"name": "Unloader Conveyor", "cost": 600, "upg": [50, 100], "io": "rack:1"}
+    "UNL": {"name": "Unloader Conveyor", "cost": 600, "upg": [50, 100], "io": "rack:1"},
+    "CYD": {"name": "Country Diverter", "cost": 0, "upg": [0, 0], "io": "1:2 (programmable country)", "site": "regional", "est": true},
+    "ELV": {"name": "Elevator Conveyor", "cost": 0, "upg": [0, 0], "io": "1:1 (floor↕floor)", "site": "regional", "est": true},
+    "SPD": {"name": "Speedway Conveyor", "cost": 0, "upg": [0, 0], "io": "1:1 (long run)", "site": "regional", "est": true},
+    "APS": {"name": "Auto Pauser Conveyor", "cost": 30000, "upg": [0, 0], "io": "1:1", "site": "regional", "tier": 15}
   }
 }

@@ -20,7 +20,9 @@ data/                        game_rules.json · warehouse_state.json (defaults)
 ```
 
 ## Engine rules
-- **Footprint:** matches the game grid — a 4×5 board of 10×10 slots: 20×20 front block (10×20 base + 2 slots) and a 30×40 back block (12 slots). Tier = expansions bought (T14 = 1,600 units). Slots unlock in a default order by tier, or click them on the **EXPANSIONS** board in the Blueprint header to match your game. Templates are laid out in the widest open rectangle anchored at the base.
+- **Footprint:** matches the game grid — a 4×5 board of 10×10 slots: 20×20 front block (10×20 base + 2 slots) and a 30×40 back block (12 slots). Tier = expansions bought (T14 = 1,600 units). Slots unlock in a default order by tier, or click them on the **EXPANSIONS** board in the Blueprint header to match your game. Templates are laid out in the widest open rectangle anchored at the front block or the back block.
+- **Input doors:** up to 4 in the starting warehouse; a 5th inbound door opens at T14.
+- **Regional Sorting Centre:** pick it from the warehouse dropdown in the header. Tiers 15–18, two floors (FLOOR 1 / FLOOR 2 tabs in the Blueprint), country-based exports via the Country Diverter (CYD) after APV, plus Elevator (ELV), Speedway (SPD) and Auto Pauser (APS, $30k) tiles. Floor size, door count and CYD/ELV/SPD prices aren't published yet, so they're editable estimates (default 50×80 per floor ≈ 5× the starting warehouse across 2 floors). Each warehouse keeps its own saved state and layout.
 - **Merge (Auto):** door pairs (D1+D2, D3+D4) share one `JNR → TAG → …` bus when dedicated lines exceed budget or footprint rows. Force with Merge / Dedicated.
 - **Tier 12+:** TAG dropped; each door `SPL`s into mirrored A/B arrays around a shared Red spine.
 - **Cost** = every tile in the auto-generated template (CNV per belt tile) + off-grid UNL/RACK or dock CNV.

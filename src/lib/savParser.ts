@@ -2,7 +2,7 @@
  * Parcel Simulator save importer (Unreal Engine 5.4+ GVAS, uncompressed).
  * Reads %LOCALAPPDATA%\parcel\Saved\SaveGames\SaveN.sav in the browser and maps it to a WarehouseState.
  */
-import { BASE_SLOTS, EXPANSION_ORDER, slotOf, type Dir, type Grid, type TileType, type WarehouseState } from "./engine";
+import { BASE_SLOTS, EXPANSION_ORDER, maxDoors, slotOf, type Dir, type Grid, type TileType, type WarehouseState } from "./engine";
 
 type TypeName = { n: string; p: TypeName[] };
 type Val = unknown;
@@ -214,13 +214,15 @@ export function saveToWarehouseState(buf: ArrayBuffer): { state: WarehouseState;
   for (const x of EXPANSION_ORDER) if (slots.length - BASE_SLOTS.length < expansions && !slots.includes(x)) slots.push(x);
 
   const doorsSeen = [...new Set(collect(root.Parcels, "DeliveryManagerName"))].sort();
-  const doors = Math.min(4, Math.max(1, doorsSeen.length || (placed.TAG ?? 1)));
+  const tier = Math.min(14, Math.max(1, expansions));
+  const doors = Math.min(maxDoors({ tier, site: "origin" }), Math.max(1, doorsSeen.length || (placed.TAG ?? 1)));
   const scanner_levels: Record<string, number> = {};
   for (const n of LEVELED) if (levels[n]) scanner_levels[n] = Math.min(...levels[n]); // slowest unit sets the pace
   const unlocked = ["CNV", "JNR", ...Object.keys(placed).filter((n) => n !== "CNV" && n !== "JNR")];
 
   const state: WarehouseState = {
-    tier: Math.min(14, Math.max(1, expansions)), // tier = expansions bought
+    site: "origin",
+    tier, // tier = expansions bought
     input_doors: doors,
     budget: Number(root.MoneyTotal ?? 0),
     unlocked_nodes: [...new Set(unlocked)],
