@@ -202,6 +202,7 @@ export function saveToWarehouseState(buf: ArrayBuffer): { state: WarehouseState;
       const pos = ((info.Transform ?? {}) as Obj).Translation as number[] | undefined;
       if (!pos) continue;
       const r = Math.round((pos[1] - origin[1]) / 100), c = Math.round((pos[0] - origin[0]) / 100);
+      placed.RACK = (placed.RACK ?? 0) + 1;
       if (r < 0 || c < 0 || r >= 40 || c >= 50) continue;
       used.add(slotOf(r, c));
       if (!blueprint[`${r},${c}`]) blueprint[`${r},${c}`] = { t: "RACK", d: 0 };

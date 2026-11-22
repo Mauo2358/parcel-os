@@ -10,7 +10,7 @@ const PALETTE: { group: string; items: TileType[] }[] = [
   { group: "Scanners", items: ["TAG", "SER", "WGT", "CNT", "CRG", "STP", "PRH", "CID"] },
   { group: "Stickers", items: ["APV", "DNY"] },
   { group: "Transport", items: ["LDR", "RACK", "UNL"] },
-  { group: "Markers", items: ["DOOR", "OUT", "AIR", "SEA"] },
+  { group: "Markers", items: ["DOOR", "OUT", "RAIL", "AIR", "SEA"] },
 ];
 const REGIONAL_PALETTE: { group: string; items: TileType[] }[] = [
   { group: "Belts", items: ["CNV", "JNR", "BRG", "SPL", "PSR", "APS", "SPD", "ELV"] },
@@ -36,6 +36,7 @@ export function tileClass(t: TileType): string {
     case "OUT": return "bg-emerald-950 text-valid border border-valid/50";
     case "AIR": return "bg-[#0f2236] text-air border border-air/50";
     case "SEA": return "bg-[#0c2a27] text-sea border border-sea/50";
+    case "RAIL": return "bg-[#2a2210] text-amber-300 border border-amber-400/50";
     default: return "bg-scan/25 text-scan";
   }
 }
@@ -211,7 +212,7 @@ export default function Blueprint({ fp, grid, setGrid, template, unlocked, flow,
                 {v ? (
                   <>
                     {showText && <span className="font-bold">{v.t}</span>}
-                    {!["DOOR", "OUT", "AIR", "SEA"].includes(v.t) && (
+                    {!["DOOR", "OUT", "AIR", "SEA", "RAIL"].includes(v.t) && (
                       <ArrowRight size={Math.max(6, Math.round(7 * zoom))} className="absolute bottom-0 right-0 opacity-80" style={{ transform: `rotate(${v.d * 90}deg)` }} />
                     )}
                   </>

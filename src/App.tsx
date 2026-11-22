@@ -1,13 +1,13 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, Check, ChevronRight, ClipboardCopy, Cpu, DoorOpen, Download, GitMerge, Layers, Plane, RotateCcw, Ship, Split, Truck, Upload } from "lucide-react";
+import { AlertTriangle, Archive, Check, ChevronRight, ClipboardCopy, Cpu, DoorOpen, Download, GitMerge, Layers, Plane, RotateCcw, Ship, Split, TrainFront, Truck, Upload } from "lucide-react";
 import Blueprint, { tileClass } from "./components/Blueprint";
 import ImportModal from "./components/ImportModal";
 import FlowDiagram from "./components/FlowDiagram";
 import PreStickered from "./components/PreStickered";
 import {
   DEFAULT_STATE, LEVELED, MK, RULES, BASE_SLOTS, REGIONAL_DEFAULT_STATE, REGIONAL_FLOORS, TIER_RANGE, catalogFor, effectiveUnlocked, fromWarehouseState,
-  isEstimate, maxDoors, slotsFor, levelOf, outputSplit, perMin, plan, scanTime,
-  topologyText, toWarehouseState, type Floors, type Grid, type Level, type Line, type MergeMode, type NodeId, type PlannerState, type Site, type WarehouseState,
+  DOCKS, DOCK_SHARE, bufferOf, isEstimate, maxDoors, slotsFor, levelOf, outputSplit, perMin, plan, scanTime,
+  topologyText, toWarehouseState, type BufferCfg, type Floors, type Grid, type ShelfSize, type Level, type Line, type MergeMode, type NodeId, type PlannerState, type Site, type WarehouseState,
 } from "./lib/engine";
 
 /** Per-site storage. The starting warehouse keeps the original keys so existing plans survive. */
@@ -144,6 +144,9 @@ function Planner({ site, onSite }: { site: Site; onSite: (s: Site) => void }) {
   const ctd = effectiveUnlocked(s).includes("CTD");
   const catalog = catalogFor(s);
   const [tMin, tMax] = TIER_RANGE[site];
+  const buf = bufferOf(s);
+  const setBuf = (patch: Partial<BufferCfg>) => setS((x) => ({ ...x, buffer: { ...bufferOf(x), ...patch } }));
+  const remaining = s.budget - p.cost;
   const setFloors = (k: keyof Floors) => (v: number) => setS((x) => ({ ...x, floors: { ...(x.floors ?? REGIONAL_FLOORS), [k]: v } }));
   const rate = (n: number) => `${n.toFixed(1)}/min`;
 
@@ -204,7 +207,8 @@ function Planner({ site, onSite }: { site: Site; onSite: (s: Site) => void }) {
           <span>DOORS <b className="text-bay-100">{s.inputDoors}</b></span>
           <span>LINES <b className="text-bay-100">{p.lines.length}</b></span>
           <span>MODE <b className={p.pivot ? "text-hazard" : p.merged ? "text-violet-300" : "text-valid"}>{p.pivot ? "META PIVOT" : p.merged ? "MERGED BUS" : "DEDICATED"}</b></span>
-          <span>COST <b className={p.overBudget ? "text-reject" : "text-valid"}>{money(p.cost)}</b> / {money(s.budget)}</span>
+          <span>BOM <b className="text-bay-100">{money(p.cost)}</b></span>
+          <span>BUDGET <b className="text-bay-100">{money(s.budget)}</b> → <b className={remaining < 0 ? "text-reject" : "text-valid"}>{remaining < 0 ? "−" : ""}{money(Math.abs(remaining))}</b> left</span>
         </div>
         <div className="flex flex-wrap gap-1.5">
           <CopyBtn text={minified} label="Copy state" />
@@ -220,7 +224,7 @@ function Planner({ site, onSite }: { site: Site; onSite: (s: Site) => void }) {
 
           <Field label="Warehouse tier" right={`${p.footprint.rows}×${p.footprint.cols} · ${p.footprint.tiles * levels} tiles${levels > 1 ? ` · ${levels} floors` : ""}`}>
             <input type="range" min={tMin} max={tMax} value={s.tier} onChange={(e) => setS((x) => ({ ...x, tier: Number(e.target.value), slots: null }))} className="w-full accent-hazard" />
-            <div className="flex justify-between text-[10px] text-bay-500"><span>{tMin}</span><b className="text-bay-100">T{s.tier}</b>{site === "origin" ? <span className="text-hazard">12+ pivot · D5 @14</span> : <span className="text-hazard">country sorting</span>}<span>{tMax}</span></div>
+            <div className="flex justify-between text-[10px] text-bay-500"><span>{tMin}</span><b className="text-bay-100">T{s.tier}</b>{site === "origin" ? <span className="text-hazard">12+ pivot · D5 @14 · 15+ regional</span> : <span className="text-hazard">country sorting</span>}<span>{tMax}</span></div>
           </Field>
 
           {site === "regional" && (
@@ -253,7 +257,7 @@ function Planner({ site, onSite }: { site: Site; onSite: (s: Site) => void }) {
           )}
 
           <div className="mb-4 grid grid-cols-2 gap-2">
-            <label><span className="label">Budget $</span>
+            <label><span className="label">Budget $ <span className={remaining < 0 ? "text-reject" : "text-valid"} title="Budget minus the current [BOM] total">({remaining < 0 ? "−" : ""}{money(Math.abs(remaining))} after BOM)</span></span>
               <input type="number" min={0} step={500} value={s.budget} onChange={(e) => set("budget")(Math.max(0, Number(e.target.value) || 0))} className="w-full border border-bay-700 bg-bay-950 px-2 py-1.5 outline-none focus:border-hazard" />
             </label>
             <label><span className="label">Box/min/door</span>
@@ -266,18 +270,18 @@ function Planner({ site, onSite }: { site: Site; onSite: (s: Site) => void }) {
 
           {!p.pivot && <PreStickered value={s.preStickered} onChange={set("preStickered")} />}
 
-          {site === "origin" && <Field label="Output docks" right={ctd ? "sorted by CTD" : (s.outputs.air || s.outputs.sea) ? <span className="text-hazard">CTD locked · manual</span> : undefined}>
-            <div className="grid grid-cols-3 gap-1">
-              <div className="flex flex-col items-center gap-0.5 border border-valid/60 bg-valid/10 px-1 py-1.5 text-valid" title="Approved road + rail parcels. Always on.">
+          {site === "origin" && <Field label="Output docks" right={ctd ? "sorted by CTD" : DOCKS.some((d) => s.outputs[d]) ? <span className="text-hazard">CTD locked · manual</span> : undefined}>
+            <div className="grid grid-cols-4 gap-1">
+              <div className="flex flex-col items-center gap-0.5 border border-valid/60 bg-valid/10 px-1 py-1.5 text-valid" title="Approved road parcels (plus any cargo type whose dock is off). Always on.">
                 <span className="flex items-center gap-1 text-[11px] font-bold"><Truck size={13} /> STD</span>
                 <span className="text-[10px]">{rate(split.standard)}</span>
               </div>
-              {([["air", Plane, "text-air border-air/60 bg-air/10"], ["sea", Ship, "text-sea border-sea/60 bg-sea/10"]] as const).map(([d, Icon, on]) => (
+              {([["rail", TrainFront, "text-amber-300 border-amber-400/60 bg-amber-400/10", "Rail cargo"], ["air", Plane, "text-air border-air/60 bg-air/10", "Air cargo"], ["sea", Ship, "text-sea border-sea/60 bg-sea/10", "Maritime"]] as const).map(([d, Icon, on, label]) => (
                 <button key={d} onClick={() => set("outputs")({ ...s.outputs, [d]: !s.outputs[d] })}
                   className={`flex flex-col items-center gap-0.5 border px-1 py-1.5 ${s.outputs[d] ? on : "border-bay-700 text-bay-500 hover:border-bay-500"}`}
-                  title={`${d === "air" ? "Air cargo" : "Maritime"} dock: ${Math.round((d === "air" ? RULES.cargo_distribution.air : RULES.cargo_distribution.maritime) * 100)}% of volume. Needs one CTD per line.`}>
+                  title={`${label} dock: ${Math.round(DOCK_SHARE[d] * 100)}% of volume. Needs one CTD per line.`}>
                   <span className="flex items-center gap-1 text-[11px] font-bold"><Icon size={13} /> {d.toUpperCase()}</span>
-                  <span className="text-[10px]">{s.outputs[d] ? rate(d === "air" ? split.air : split.sea) : "off → STD"}</span>
+                  <span className="text-[10px]">{s.outputs[d] ? rate(split[d]) : "off → STD"}</span>
                 </button>
               ))}
             </div>
@@ -289,6 +293,35 @@ function Planner({ site, onSite }: { site: Site; onSite: (s: Site) => void }) {
               <p className="mt-1 text-[10px] text-bay-500">Rejects {rate(split.reject)} → {effectiveUnlocked(s).includes("DNY") ? "DNY" : "manual deny"}</p>
             </Field>
           )}
+
+          <Field label="Shelf buffer" right={
+            <button onClick={() => setBuf({ enabled: !buf.enabled })} className={`btn px-2 py-0.5 text-[10px] ${buf.enabled ? "btn-on" : ""}`}>
+              <Archive size={11} /> {buf.enabled ? "ON" : "OFF"}
+            </button>}>
+            {buf.enabled ? (
+              <>
+                <Seg<ShelfSize> value={buf.shelf} onChange={(v) => setBuf({ shelf: v })}
+                  options={(Object.keys(RULES.racks) as ShelfSize[]).map((k) => ({ v: k, l: <span title={RULES.racks[k].name}>{k} <span className="text-bay-500">{RULES.racks[k].cap}</span></span> }))} />
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <label><span className="label">Peak window (min)</span>
+                    <input type="number" min={0} step={1} value={buf.windowMin} onChange={(e) => setBuf({ windowMin: Math.max(0, Number(e.target.value) || 0) })} className="w-full border border-bay-700 bg-bay-950 px-2 py-1.5 outline-none focus:border-hazard" />
+                  </label>
+                  <label><span className="label">Truck load (parcels)</span>
+                    <input type="number" min={0} step={5} value={buf.truckLoad} onChange={(e) => setBuf({ truckLoad: Math.max(0, Number(e.target.value) || 0) })} className="w-full border border-bay-700 bg-bay-950 px-2 py-1.5 outline-none focus:border-hazard" />
+                  </label>
+                </div>
+                <div className="mt-2 space-y-0.5 text-[11px]">
+                  {p.buffers.map((b) => (
+                    <div key={b.line} className="flex justify-between">
+                      <span className="text-hazard">{b.line}</span>
+                      <span>{b.parcels} parcels → <b className="text-bay-100">{b.shelves}× {buf.shelf}</b>{b.overflow > 0 && <span className="text-reject"> · +{b.overflow.toFixed(1)}/min</span>}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1 text-[10px] text-bay-500">Door → LDR → shelves → UNL → line. Sized for overflow × window + one truck per door. Rack capacity & price: <span className="text-hazard">est.</span> (XL ≥16 seen in your save)</p>
+              </>
+            ) : <p className="text-[10px] text-bay-500">Shelves soak up truck dumps and backlog in front of each line.</p>}
+          </Field>
 
           <Field label="Hardware catalog" right={`${s.unlocked.filter((n) => catalog.includes(n)).length}/${catalog.length}`}>
             <div className="space-y-1">
@@ -339,11 +372,12 @@ function Planner({ site, onSite }: { site: Site; onSite: (s: Site) => void }) {
                 <span>{split.processed.toFixed(1)} / {split.input.toFixed(1)} box/min processed</span>
               </div>
               <div className="flex h-2 border border-bay-700 bg-bay-950">
-                {([["bg-valid", split.standard], ["bg-air", split.air], ["bg-sea", split.sea], ["bg-reject", split.reject], ["bg-bay-700", split.backlog]] as const).map(([c, n]) =>
+                {([["bg-valid", split.standard], ["bg-amber-400", split.rail], ["bg-air", split.air], ["bg-sea", split.sea], ["bg-reject", split.reject], ["bg-bay-700", split.backlog]] as const).map(([c, n]) =>
                   n > 0 && <div key={c} className={`h-full ${c}`} style={{ width: `${(n / Math.max(split.input, 1e-9)) * 100}%` }} />)}
               </div>
               <div className="mt-1 flex flex-wrap gap-x-3 text-[10px] text-bay-500">
                 <span className="text-valid">STD {rate(split.standard)}</span>
+                {s.outputs.rail && <span className="text-amber-300">RAIL {rate(split.rail)}</span>}
                 {s.outputs.air && <span className="text-air">AIR {rate(split.air)}</span>}
                 {s.outputs.sea && <span className="text-sea">SEA {rate(split.sea)}</span>}
                 <span className="text-reject">REJECT {rate(split.reject)}</span>
@@ -357,6 +391,7 @@ function Planner({ site, onSite }: { site: Site; onSite: (s: Site) => void }) {
                   <div className={`h-full ${t.utilization > 1 ? "bg-reject" : t.utilization > 0.85 ? "bg-hazard" : "bg-valid"}`} style={{ width: `${Math.min(100, t.utilization * 100)}%` }} />
                 </div>
                 <div className="mt-1 text-[10px] text-bay-500">{t.bottleneck === "NONE" ? `${Math.round(t.utilization * 100)}% utilization` : `BOTTLENECK · ${t.bottleneck}`}</div>
+                {buf.enabled && (() => { const b = p.buffers.find((x) => x.line === t.line); return b ? <div className="text-[10px] text-cyan-200"><Archive size={10} className="mr-1 inline" />{b.shelves}× {buf.shelf} shelf · {b.parcels} parcels</div> : null; })()}
               </div>
             ))}
           </div>
@@ -376,18 +411,22 @@ function Planner({ site, onSite }: { site: Site; onSite: (s: Site) => void }) {
 
           <div className="grid gap-4 xl:grid-cols-2">
             <section className="panel">
-              <header className="border-b border-bay-700 px-3 py-2 tracking-widest text-hazard">[BOM] <span className="text-bay-500">recommended template</span></header>
+              <header className="border-b border-bay-700 px-3 py-2 tracking-widest text-hazard">[BOM] <span className="text-bay-500">recommended template{s.owned ? " · owned hardware credited" : ""}</span></header>
               <table className="w-full">
-                <thead><tr className="text-left text-[10px] uppercase tracking-widest text-bay-500"><th className="px-3 py-1.5">ID</th><th>Node</th><th className="text-right">Qty</th><th className="text-right">Unit</th><th className="px-3 text-right">Total</th></tr></thead>
+                <thead><tr className="text-left text-[10px] uppercase tracking-widest text-bay-500"><th className="px-3 py-1.5">ID</th><th>Node</th><th className="text-right">Qty</th><th className="text-right" title="Already placed in your imported save">Owned</th><th className="text-right">Unit</th><th className="px-3 text-right">Total</th></tr></thead>
                 <tbody>
                   {p.bom.map((b) => (
                     <tr key={b.id} className="border-t border-bay-800">
                       <td className="px-3 py-1"><span className={`px-1 text-[11px] font-bold ${tileClass(b.id)}`}>{b.id}</span></td>
-                      <td className="text-bay-300">{b.name}</td><td className="text-right">{b.qty}</td><td className="text-right text-bay-500">{isEstimate(b.id) ? "$?" : money(b.unit)}</td><td className="px-3 text-right">{money(b.total)}</td>
+                      <td className="text-bay-300">{b.name}</td><td className="text-right">{b.qty}</td><td className="text-right text-valid">{b.owned ? b.owned : ""}</td><td className="text-right text-bay-500">{isEstimate(b.id) ? "$?" : money(b.unit)}</td><td className="px-3 text-right">{money(b.total)}</td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot><tr className="border-t border-bay-700 font-bold"><td className="px-3 py-1.5" colSpan={4}>TOTAL</td><td className={`px-3 text-right ${p.overBudget ? "text-reject" : "text-valid"}`}>{money(p.cost)}</td></tr></tfoot>
+                <tfoot>
+                  <tr className="border-t border-bay-700 font-bold"><td className="px-3 py-1.5" colSpan={5}>TO BUY</td><td className="px-3 text-right">{money(p.cost)}</td></tr>
+                  <tr className="text-bay-500"><td className="px-3 py-1" colSpan={5}>BUDGET</td><td className="px-3 text-right">{money(s.budget)}</td></tr>
+                  <tr className="font-bold"><td className="px-3 py-1" colSpan={5}>{remaining < 0 ? "SHORT" : "REMAINING"}</td><td className={`px-3 text-right ${remaining < 0 ? "text-reject" : "text-valid"}`}>{money(Math.abs(remaining))}</td></tr>
+                </tfoot>
               </table>
             </section>
             <section className="panel">

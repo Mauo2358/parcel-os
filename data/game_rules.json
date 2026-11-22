@@ -1,5 +1,11 @@
 {
   "grid": {"start": [10, 20], "expansion": [10, 10], "max_tier": 14, "tile_unit": "2x2"},
+  "max_tier_total": 18,
+  "racks": {
+    "M": {"name": "Storage Rack (Medium)", "cap": 8, "cost": 500, "est": true},
+    "L": {"name": "Storage Rack (Large)", "cap": 12, "cost": 750, "est": true},
+    "XL": {"name": "Storage Rack (Extra Large)", "cap": 16, "cost": 1000, "est": true}
+  },
   "regional": {"tiers": [15, 18], "floor_est": [50, 80], "levels": 2, "countries": 12, "unlock_cost": 500000, "max_doors_est": 8},
   "scan_speeds_sec": {"lvl_1": 10, "lvl_2": 5, "lvl_3": 1},
   "cargo_distribution": {"road": 0.333, "rail": 0.333, "air": 0.167, "maritime": 0.083, "invalid": 0.083},

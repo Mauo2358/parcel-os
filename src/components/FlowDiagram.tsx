@@ -3,16 +3,16 @@ import { ZoomControls, useStoredZoom, useZoomPan } from "../lib/useZoomPan";
 import { DOCKS, LEVELED, MK, SCANNERS, effectiveUnlocked, levelOf, type Dock, type Line, type NodeId, type Plan, type PlannerState } from "../lib/engine";
 
 /* SVG needs raw hex; keep in sync with tailwind.config.js */
-const C = { white: "#dcdad4", green: "#5fd38d", red: "#ff5d5d", air: "#6cb6ff", sea: "#2dd4bf", hazard: "#f5a524" };
-const DOCK_C: Record<Dock, string> = { air: C.air, sea: C.sea };
+const C = { white: "#dcdad4", green: "#5fd38d", red: "#ff5d5d", air: "#6cb6ff", sea: "#2dd4bf", rail: "#fbbf24", hazard: "#f5a524" };
+const DOCK_C: Record<Dock, string> = { air: C.air, sea: C.sea, rail: C.rail };
 const FILL: Record<string, { bg: string; fg: string }> = {
   TAG: { bg: "#f5a524", fg: "#000" }, CID: { bg: "#7a3a12", fg: "#ffd6b8" }, APV: { bg: "#4fb77a", fg: "#000" }, DNY: { bg: "#d94b4b", fg: "#000" },
   JNR: { bg: "#6d4fb3", fg: "#eae2ff" }, SPL: { bg: "#6d4fb3", fg: "#eae2ff" }, CTD: { bg: "#4a3a8a", fg: "#eae2ff" }, LDR: { bg: "#1f6f7a", fg: "#d9f6ff" },
   DOOR: { bg: "#dcdad4", fg: "#000" }, OUT: { bg: "#0f2a1c", fg: C.green }, MANUAL: { bg: "#2a1414", fg: C.red },
-  AIR: { bg: "#0f2236", fg: C.air }, SEA: { bg: "#0c2a27", fg: C.sea },
+  AIR: { bg: "#0f2236", fg: C.air }, SEA: { bg: "#0c2a27", fg: C.sea }, RAIL: { bg: "#2a2210", fg: C.rail },
 };
 const fill = (t: string) => FILL[t] ?? { bg: "#1e3a52", fg: "#6cb6ff" };
-const OUTLINE: Record<string, string> = { OUT: C.green, MANUAL: C.red, AIR: C.air, SEA: C.sea };
+const OUTLINE: Record<string, string> = { OUT: C.green, MANUAL: C.red, AIR: C.air, SEA: C.sea, RAIL: C.rail };
 
 const W = 46, H = 26, GAP = 24, STEP = W + GAP, ROW = 44;
 const WALL = 12, LEFT = WALL + 30, TOP = WALL + 40, ZONE_GAP = 46;
@@ -209,6 +209,7 @@ export default function FlowDiagram({ plan, state }: Props) {
     </marker>
   );
   const legend: [string, string][] = [["MAIN BELT", C.white], ["VALID BYPASS", C.green], ["REJECT SPINE", C.red]];
+  if (v.used.has(C.rail)) legend.push(["RAIL SORT", C.rail]);
   if (v.used.has(C.air)) legend.push(["AIR SORT", C.air]);
   if (v.used.has(C.sea)) legend.push(["SEA SORT", C.sea]);
 
@@ -227,7 +228,7 @@ export default function FlowDiagram({ plan, state }: Props) {
       <div ref={scrollRef} className="scroll-thin min-h-0 flex-1 overflow-auto p-3">
       <svg viewBox={`0 0 ${width} ${height}`} width={width * scale} height={height * scale} className="block font-mono">
         <defs>
-          {[C.white, C.green, C.red, C.air, C.sea].map(arrow)}
+          {[C.white, C.green, C.red, C.rail, C.air, C.sea].map(arrow)}
           <pattern id="po-floor" width="32" height="32" patternUnits="userSpaceOnUse">
             <rect width="32" height="32" fill="#13171a" />
             <path d="M32 0V32H0" fill="none" stroke="#1b2124" strokeWidth="1" />
